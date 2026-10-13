@@ -1,2 +1,8 @@
 .flycode
 .python-version
+
+
+# Added by cargo
+
+/target
+/target
