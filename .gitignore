@@ -3,6 +3,7 @@
 
 
 # Added by cargo
+/target
 
-/target
-/target
+# FlyCode files
+.flycode/
