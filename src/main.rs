@@ -16,7 +16,7 @@ use sdl2::rect::Rect;
 use assembler::{assemble_and_load, AsmResult};
 use cpu::Cpu;
 use editor::{cursor_line_col, line_end_byte, line_start_byte, set_cursor_from_line_col};
-use ui::{draw_text, find_font, SPACE_WIDTH};
+use ui::{draw_text, find_font};
 
 /// 界面渲染字号。
 const FONT_SIZE: u16 = 18;
@@ -753,7 +753,7 @@ ten: EQU 10
             my += line_h;
         }
 
-        // 底部状态行：只负责提示 / 输入，运行状态栏已移到编辑器左下角
+        // 底部状态行：合并运行状态和提示信息；命令模式时隐藏，只显示命令行
         canvas.set_draw_color(Color::RGB(0, 0, 110));
         canvas.fill_rect(status_rect)?;
         let io = cpu.io_log.last().map(|s| s.as_str()).unwrap_or("");
@@ -784,53 +784,29 @@ ten: EQU 10
                 Color::RGB(255, 255, 255),
             )?;
         } else {
+            let run_state = if running {
+                "运行"
+            } else if cpu.halted {
+                "停机"
+            } else {
+                "暂停"
+            };
             let hint = if io.is_empty() {
                 status.clone()
             } else {
                 format!("{} | {}", status, io)
             };
+            let merged = format!("{}模式 | {} | 速度 {} | {}", vim_mode.name(), run_state, speed, hint);
             draw_text(
                 &mut canvas,
                 &texture_creator,
                 &font,
-                &hint,
+                &merged,
                 8,
                 status_rect.y() + 4,
                 Color::RGB(255, 255, 0),
             )?;
         }
-
-        // 运行状态栏：绘制在编辑器区域的左下角，和右侧内存观察器保持距离，
-        // 避免像之前那样贴到左右面板分界线（甚至向右溢出）时压到内存观察器。
-        let run_state = if running {
-            "运行"
-        } else if cpu.halted {
-            "停机"
-        } else {
-            "暂停"
-        };
-        let run_text = format!("{}模式 | {} | 速度 {}", vim_mode.name(), run_state, speed);
-        let (rtw, rth) = font.size_of(&run_text).map_err(|e| e.to_string())?;
-        // draw_text 对含 " | " 的文本会按固定空格宽度渲染，这里按同一规则估算真实绘制宽度，
-        // 否则背景框会比文字窄，或者文字会溢出到右侧。
-        let native_space_w = font.size_of(" ").map(|(w, _)| w as i32).unwrap_or(0);
-        let space_count = run_text.chars().filter(|&ch| ch == ' ').count() as i32;
-        let run_w = rtw as i32 + space_count * (SPACE_WIDTH - native_space_w);
-        let margin = 6;
-        let rx = editor_rect.x() + margin;
-        let ry = (editor_rect.y() + editor_rect.height() as i32 - rth as i32 - margin + 2)
-            .max(editor_rect.y());
-        canvas.set_draw_color(Color::RGB(0, 0, 80));
-        canvas.fill_rect(Rect::new(rx - 4, ry - 2, run_w.max(0) as u32 + 8, rth + 4))?;
-        draw_text(
-            &mut canvas,
-            &texture_creator,
-            &font,
-            &run_text,
-            rx,
-            ry,
-            Color::RGB(255, 255, 0),
-        )?;
 
         canvas.present();
         std::thread::sleep(Duration::from_millis(16));
