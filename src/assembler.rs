@@ -214,7 +214,6 @@ pub fn assemble_table(rows: &[[String; 4]]) -> AsmResult {
             code.push(machine);
             line_map.insert(addr, row_idx);
             let mut addr_cur = addr.wrapping_add(1);
-            addr = addr_cur;
             for i in 0..n {
                 let op_str = row[2 + i].trim();
                 let kind = operand_kind(&mnemonic, i);
@@ -281,22 +280,4 @@ pub fn load_into_cpu(cpu: &mut Cpu, asm: &AsmResult) {
     }
     cpu.pc = 0;
     cpu.halted = false;
-}
-
-pub fn assemble_and_load(
-    cpu: &mut Cpu,
-    rows: &[[String; 4]],
-    asm: &mut AsmResult,
-    status: &mut String,
-    dirty: &mut bool,
-) {
-    let result = assemble_table(rows);
-    *asm = result;
-    if asm.errors.is_empty() {
-        load_into_cpu(cpu, asm);
-        *dirty = false;
-        *status = format!("汇编成功: {} 字", asm.code.len());
-    } else {
-        *status = format!("汇编错误: {}", asm.errors[0]);
-    }
 }

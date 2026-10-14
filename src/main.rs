@@ -1,6 +1,5 @@
 mod assembler;
 mod cpu;
-mod editor;
 mod ui;
 
 use std::collections::HashSet;
@@ -13,7 +12,7 @@ use sdl2::mouse::MouseButton;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 
-use assembler::{assemble_table, load_into_cpu, AsmResult, instr_info};
+use assembler::{assemble_table, load_into_cpu, instr_info};
 use cpu::Cpu;
 use ui::{draw_text, find_font};
 
@@ -100,7 +99,7 @@ fn main() -> Result<(), String> {
     let mut editor_scroll = 0usize;
     let mut mem_scroll: u16 = 0;
     let mut breakpoints: HashSet<usize> = HashSet::new();
-    let mut asm = AsmResult::empty();
+    let mut asm = assemble_table(&table);
     let mut dirty = true;
     let mut running = false;
     let mut speed: u32 = 5;
@@ -115,7 +114,6 @@ fn main() -> Result<(), String> {
     let mut mouse_y = 0;
     let mut last_tick = Instant::now();
 
-    asm = assemble_table(&table);
     load_into_cpu(&mut cpu, &asm);
 
     'outer: loop {
@@ -799,8 +797,12 @@ fn main() -> Result<(), String> {
                         canvas.fill_rect(cell_rect)?;
                     }
                 }
-                if row_idx == cursor_row && col == cursor_col && vim_mode == VimMode::Insert {
-                    canvas.set_draw_color(Color::RGB(0, 0, 120));
+                if row_idx == cursor_row && col == cursor_col {
+                    if vim_mode == VimMode::Insert {
+                        canvas.set_draw_color(Color::RGB(0, 0, 120));
+                    } else {
+                        canvas.set_draw_color(Color::RGB(0, 0, 100));
+                    }
                     canvas.fill_rect(cell_rect)?;
                 }
                 let display = if col < 4 {
@@ -854,6 +856,10 @@ fn main() -> Result<(), String> {
                     y,
                     text_color,
                 )?;
+                if row_idx == cursor_row && col == cursor_col {
+                    canvas.set_draw_color(Color::RGB(255, 255, 0));
+                    canvas.draw_rect(cell_rect)?;
+                }
             }
             if row_idx == cursor_row && vim_mode == VimMode::Insert {
                 let cell = &table[cursor_row][cursor_col];
