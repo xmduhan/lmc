@@ -480,15 +480,23 @@ ten: EQU 10
         draw_text(&mut canvas, &texture_creator, &font, "内存 (十六进制)", mem_rect.x() + 8, mem_rect.y() + 4, Color::RGB(0, 255, 255))?;
         let mem_visible = ((mem_rect.height() as i32 - 30) / line_h).max(1) as usize;
         let start = mem_scroll & !0xF;
+        let mem_left = mem_rect.x() + 8;
+        let mem_right = mem_rect.x() + mem_rect.width() as i32 - 8;
+        let addr_text_w = char_w * 5;
+        let data_w = (mem_right - (mem_left + addr_text_w)).max(0);
+        let digit_w = char_w * 4;
+        let gap_count = 16;
+        let gap = ((data_w - 16 * digit_w) / gap_count).max(0);
+        let digit_step = digit_w + gap;
         let mut my = mem_rect.y() + 30;
         for row in 0..mem_visible {
             let addr = start.wrapping_add((row as u16) * 16);
-            let mut s = format!("{:04X}:", addr);
+            draw_text(&mut canvas, &texture_creator, &font, &format!("{:04X}:", addr), mem_left, my, Color::RGB(255, 255, 0))?;
             for col in 0..16 {
                 let a = addr.wrapping_add(col);
-                s.push_str(&format!(" {:04X}", cpu.mem[a as usize]));
+                let x = mem_left + addr_text_w + gap + (col as i32) * digit_step;
+                draw_text(&mut canvas, &texture_creator, &font, &format!("{:04X}", cpu.mem[a as usize]), x, my, Color::RGB(255, 255, 0))?;
             }
-            draw_text(&mut canvas, &texture_creator, &font, &s, mem_rect.x() + 8, my, Color::RGB(255, 255, 0))?;
             my += line_h;
         }
 
