@@ -21,6 +21,15 @@ use ui::{draw_text, find_font};
 /// 界面渲染字号。
 const FONT_SIZE: u16 = 18;
 
+/// 内存观察器最右一列到内存区右边界的留白（像素）。
+const MEM_RIGHT_MARGIN: i32 = 8;
+
+/// 内存观察器列间距的额外收窄量（像素）。
+///
+/// 0 表示最后一列右边缘正好对齐到内存区右边界（不越界）。
+/// 想让它再往左收，就把它调大；每加 1，最后一列左移 15 像素。
+const MEM_GAP_TRIM: i32 = 0;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
     None,
@@ -481,12 +490,21 @@ ten: EQU 10
         let mem_visible = ((mem_rect.height() as i32 - 30) / line_h).max(1) as usize;
         let start = mem_scroll & !0xF;
         let mem_left = mem_rect.x() + 8;
-        let mem_right = mem_rect.x() + mem_rect.width() as i32 - 8;
+        let mem_right = mem_rect.x() + mem_rect.width() as i32 - MEM_RIGHT_MARGIN;
         let addr_text_w = char_w * 5;
         let data_w = (mem_right - (mem_left + addr_text_w)).max(0);
-        let digit_w = char_w * 4;
-        let gap_count = 16;
-        let gap = ((data_w - 16 * digit_w) / gap_count).max(0);
+        // 用字体实际渲染宽度来算数字宽度，避免用 char_w * 4 估算导致最右一列越界。
+        let digit_w = font
+            .size_of("0000")
+            .map(|(w, _)| w as i32)
+            .unwrap_or(char_w * 4);
+        // 一行 16 个数字，之间有 15 个间隙。
+        // 这样最后一列的右边缘恰好落在 mem_right 上，无需再手动减 N 像素。
+        let gap = if data_w > 16 * digit_w {
+            ((data_w - 16 * digit_w) / 15 - MEM_GAP_TRIM).max(0)
+        } else {
+            0
+        };
         let digit_step = digit_w + gap;
         let mut my = mem_rect.y() + 30;
         for row in 0..mem_visible {
@@ -494,7 +512,7 @@ ten: EQU 10
             draw_text(&mut canvas, &texture_creator, &font, &format!("{:04X}:", addr), mem_left, my, Color::RGB(255, 255, 0))?;
             for col in 0..16 {
                 let a = addr.wrapping_add(col);
-                let x = mem_left + addr_text_w + gap + (col as i32) * digit_step;
+                let x = mem_left + addr_text_w + (col as i32) * digit_step;
                 draw_text(&mut canvas, &texture_creator, &font, &format!("{:04X}", cpu.mem[a as usize]), x, my, Color::RGB(255, 255, 0))?;
             }
             my += line_h;
