@@ -17,17 +17,6 @@ pub struct AsmResult {
     pub rows: Vec<AsmRow>,
 }
 
-impl AsmResult {
-    pub fn empty() -> Self {
-        AsmResult {
-            code: Vec::new(),
-            line_map: HashMap::new(),
-            errors: Vec::new(),
-            rows: Vec::new(),
-        }
-    }
-}
-
 pub fn instr_info(mnemonic: &str) -> Option<(usize, u16)> {
     match mnemonic {
         "HLT" => Some((0, 0x001)),
