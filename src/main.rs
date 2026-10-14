@@ -15,7 +15,7 @@ use sdl2::rect::Rect;
 
 use assembler::{assemble_and_load, AsmResult};
 use cpu::Cpu;
-use editor::{cursor_line_col, line_end_byte, set_cursor_from_line_col};
+use editor::{cursor_line_col, line_end_byte, line_start_byte, set_cursor_from_line_col};
 use ui::{draw_text, find_font};
 
 /// 界面渲染字号。
@@ -36,6 +36,23 @@ enum InputMode {
     Open,
     Save,
     Export,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VimMode {
+    Normal,
+    Insert,
+    Command,
+}
+
+impl VimMode {
+    fn name(self) -> &'static str {
+        match self {
+            VimMode::Normal => "普通",
+            VimMode::Insert => "编辑",
+            VimMode::Command => "命令",
+        }
+    }
 }
 
 fn main() -> Result<(), String> {
@@ -95,9 +112,13 @@ ten: EQU 10
     let mut dirty = true;
     let mut running = false;
     let mut speed: u32 = 5;
-    let mut status = String::from("就绪");
+    let mut status = String::from("普通模式: hjkl 移动, i 编辑, :q 退出");
     let mut input_mode = InputMode::None;
     let mut input_buffer = String::new();
+    let mut vim_mode = VimMode::Normal;
+    let mut command_buffer = String::new();
+    let mut current_file: Option<String> = None;
+    let mut suppress_text_input = false;
     let mut mouse_x = 0;
     let mut mouse_y = 0;
     let mut last_tick = Instant::now();
@@ -108,7 +129,7 @@ ten: EQU 10
         let (win_w, win_h) = canvas.output_size()?;
         let line_h = font.height() + 4;
 
-        // 左侧面板布局：标题行、快捷键行、代码编辑区、状态行
+        // 左侧面板布局：标题行、快捷键行、代码编辑区、底部状态/输入行
         let left_w = win_w / 2;
         let title_h: u32 = line_h as u32;
         let shortcut_h: u32 = line_h as u32;
@@ -158,18 +179,19 @@ ten: EQU 10
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => break 'outer,
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    if input_mode != InputMode::None {
-                        input_mode = InputMode::None;
-                        input_buffer.clear();
-                    } else {
-                        break 'outer;
-                    }
-                }
                 Event::TextInput { text, .. } => {
-                    if input_mode != InputMode::None {
+                    if suppress_text_input {
+                        suppress_text_input = false;
+                    } else if input_mode != InputMode::None {
                         input_buffer.push_str(&text);
-                    } else {
+                    } else if vim_mode == VimMode::Command {
+                        for ch in text.chars() {
+                            if ch == ':' && command_buffer.is_empty() {
+                                continue;
+                            }
+                            command_buffer.push(ch);
+                        }
+                    } else if vim_mode == VimMode::Insert {
                         editor_text.insert_str(editor_cursor, &text);
                         editor_cursor += text.len();
                         dirty = true;
@@ -178,6 +200,11 @@ ten: EQU 10
                 Event::KeyDown { keycode: Some(key), keymod, .. } => {
                     if input_mode != InputMode::None {
                         match key {
+                            Keycode::Escape => {
+                                input_mode = InputMode::None;
+                                input_buffer.clear();
+                                status = "已取消".to_string();
+                            }
                             Keycode::Return => {
                                 let mode = input_mode;
                                 input_mode = InputMode::None;
@@ -187,12 +214,17 @@ ten: EQU 10
                                             editor_text = s;
                                             editor_cursor = editor_text.len();
                                             dirty = true;
+                                            current_file = Some(input_buffer.clone());
                                             status = format!("已打开 {}", input_buffer);
                                         }
                                         Err(e) => status = format!("打开失败: {}", e),
                                     },
                                     InputMode::Save => match fs::write(&input_buffer, &editor_text) {
-                                        Ok(_) => status = format!("已保存 {}", input_buffer),
+                                        Ok(_) => {
+                                            current_file = Some(input_buffer.clone());
+                                            dirty = false;
+                                            status = format!("已保存 {}", input_buffer);
+                                        }
                                         Err(e) => status = format!("保存失败: {}", e),
                                     },
                                     InputMode::Export => {
@@ -274,85 +306,276 @@ ten: EQU 10
                             Keycode::O if keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) => {
                                 running = false;
                                 input_mode = InputMode::Open;
-                                input_buffer = "program.asm".to_string();
+                                input_buffer = current_file.clone().unwrap_or_else(|| "program.asm".to_string());
                             }
                             Keycode::S if keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD) => {
                                 running = false;
                                 input_mode = InputMode::Save;
-                                input_buffer = "program.asm".to_string();
+                                input_buffer = current_file.clone().unwrap_or_else(|| "program.asm".to_string());
                             }
-                            Keycode::Backspace => {
-                                if editor_cursor > 0 {
-                                    let prev = editor_text[..editor_cursor]
-                                        .char_indices()
-                                        .last()
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(0);
-                                    editor_text.remove(prev);
-                                    editor_cursor = prev;
-                                    dirty = true;
-                                }
-                            }
-                            Keycode::Delete => {
-                                if editor_cursor < editor_text.len() {
-                                    editor_text.remove(editor_cursor);
-                                    dirty = true;
-                                }
-                            }
-                            Keycode::Left => {
-                                if editor_cursor > 0 {
-                                    editor_cursor = editor_text[..editor_cursor]
-                                        .char_indices()
-                                        .last()
-                                        .map(|(i, _)| i)
-                                        .unwrap_or(0);
-                                }
-                            }
-                            Keycode::Right => {
-                                if editor_cursor < editor_text.len() {
-                                    if let Some(ch) = editor_text[editor_cursor..].chars().next() {
-                                        editor_cursor += ch.len_utf8();
+                            _ => match vim_mode {
+                                VimMode::Command => {
+                                    match key {
+                                        Keycode::Escape => {
+                                            command_buffer.clear();
+                                            vim_mode = VimMode::Normal;
+                                            status = "普通模式".to_string();
+                                        }
+                                        Keycode::Return => {
+                                            let cmd = command_buffer.trim().trim_start_matches(':').to_string();
+                                            command_buffer.clear();
+                                            vim_mode = VimMode::Normal;
+                                            if cmd == "q" || cmd == "q!" || cmd == "quit" {
+                                                break 'outer;
+                                            } else if cmd == "w" {
+                                                if let Some(path) = &current_file {
+                                                    match fs::write(path, &editor_text) {
+                                                        Ok(_) => {
+                                                            dirty = false;
+                                                            status = format!("已保存 {}", path);
+                                                        }
+                                                        Err(e) => status = format!("保存失败: {}", e),
+                                                    }
+                                                } else {
+                                                    status = "没有文件名，使用 :w <file>".to_string();
+                                                }
+                                            } else if let Some(path) = cmd.strip_prefix("w ") {
+                                                let path = path.trim();
+                                                if path.is_empty() {
+                                                    status = "用法: :w <file>".to_string();
+                                                } else {
+                                                    match fs::write(path, &editor_text) {
+                                                        Ok(_) => {
+                                                            current_file = Some(path.to_string());
+                                                            dirty = false;
+                                                            status = format!("已保存 {}", path);
+                                                        }
+                                                        Err(e) => status = format!("保存失败: {}", e),
+                                                    }
+                                                }
+                                            } else if cmd == "wq" || cmd == "x" {
+                                                if let Some(path) = &current_file {
+                                                    match fs::write(path, &editor_text) {
+                                                        Ok(_) => {
+                                                            dirty = false;
+                                                            status = format!("已保存 {}", path);
+                                                            break 'outer;
+                                                        }
+                                                        Err(e) => status = format!("保存失败: {}", e),
+                                                    }
+                                                } else {
+                                                    status = "没有文件名，使用 :w <file>".to_string();
+                                                }
+                                            } else if cmd == "e" {
+                                                status = "用法: :e <file>".to_string();
+                                            } else if let Some(path) = cmd.strip_prefix("e ") {
+                                                let path = path.trim();
+                                                if path.is_empty() {
+                                                    status = "用法: :e <file>".to_string();
+                                                } else {
+                                                    match fs::read_to_string(path) {
+                                                        Ok(s) => {
+                                                            editor_text = s;
+                                                            editor_cursor = editor_text.len();
+                                                            dirty = true;
+                                                            current_file = Some(path.to_string());
+                                                            status = format!("已打开 {}", path);
+                                                        }
+                                                        Err(e) => status = format!("打开失败: {}", e),
+                                                    }
+                                                }
+                                            } else {
+                                                status = format!("未知命令: {}", cmd);
+                                            }
+                                        }
+                                        Keycode::Backspace => {
+                                            command_buffer.pop();
+                                        }
+                                        _ => {}
                                     }
                                 }
-                            }
-                            Keycode::Up => {
-                                let (line, col) = cursor_line_col(&editor_text, editor_cursor);
-                                if line > 0 {
-                                    set_cursor_from_line_col(&editor_text, &mut editor_cursor, line - 1, col);
+                                VimMode::Insert => {
+                                    match key {
+                                        Keycode::Escape => {
+                                            vim_mode = VimMode::Normal;
+                                            status = "普通模式".to_string();
+                                        }
+                                        Keycode::Backspace => {
+                                            if editor_cursor > 0 {
+                                                let prev = editor_text[..editor_cursor]
+                                                    .char_indices()
+                                                    .last()
+                                                    .map(|(i, _)| i)
+                                                    .unwrap_or(0);
+                                                editor_text.remove(prev);
+                                                editor_cursor = prev;
+                                                dirty = true;
+                                            }
+                                        }
+                                        Keycode::Delete => {
+                                            if editor_cursor < editor_text.len() {
+                                                editor_text.remove(editor_cursor);
+                                                dirty = true;
+                                            }
+                                        }
+                                        Keycode::Left => {
+                                            if editor_cursor > 0 {
+                                                editor_cursor = editor_text[..editor_cursor]
+                                                    .char_indices()
+                                                    .last()
+                                                    .map(|(i, _)| i)
+                                                    .unwrap_or(0);
+                                            }
+                                        }
+                                        Keycode::Right => {
+                                            if editor_cursor < editor_text.len() {
+                                                if let Some(ch) = editor_text[editor_cursor..].chars().next() {
+                                                    editor_cursor += ch.len_utf8();
+                                                }
+                                            }
+                                        }
+                                        Keycode::Up => {
+                                            let (line, col) = cursor_line_col(&editor_text, editor_cursor);
+                                            if line > 0 {
+                                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line - 1, col);
+                                            }
+                                        }
+                                        Keycode::Down => {
+                                            let (line, col) = cursor_line_col(&editor_text, editor_cursor);
+                                            set_cursor_from_line_col(&editor_text, &mut editor_cursor, line + 1, col);
+                                        }
+                                        Keycode::Home => {
+                                            let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                            set_cursor_from_line_col(&editor_text, &mut editor_cursor, line, 0);
+                                        }
+                                        Keycode::End => {
+                                            let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                            let end = line_end_byte(&editor_text, line);
+                                            editor_cursor = end;
+                                        }
+                                        Keycode::Return => {
+                                            editor_text.insert(editor_cursor, '\n');
+                                            editor_cursor += 1;
+                                            dirty = true;
+                                        }
+                                        Keycode::Tab => {
+                                            editor_text.insert_str(editor_cursor, "    ");
+                                            editor_cursor += 4;
+                                            dirty = true;
+                                        }
+                                        _ => {}
+                                    }
                                 }
-                            }
-                            Keycode::Down => {
-                                let (line, col) = cursor_line_col(&editor_text, editor_cursor);
-                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line + 1, col);
-                            }
-                            Keycode::Home => {
-                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
-                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line, 0);
-                            }
-                            Keycode::End => {
-                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
-                                let end = line_end_byte(&editor_text, line);
-                                editor_cursor = end;
-                            }
-                            Keycode::Return => {
-                                editor_text.insert(editor_cursor, '\n');
-                                editor_cursor += 1;
-                                dirty = true;
-                            }
-                            Keycode::Tab => {
-                                editor_text.insert_str(editor_cursor, "    ");
-                                editor_cursor += 4;
-                                dirty = true;
-                            }
-                            Keycode::Plus | Keycode::Equals => {
-                                speed = (speed + 1).min(10);
-                                status = format!("速度 {}", speed);
-                            }
-                            Keycode::Minus => {
-                                speed = speed.saturating_sub(1).max(1);
-                                status = format!("速度 {}", speed);
-                            }
-                            _ => {}
+                                VimMode::Normal => {
+                                    match key {
+                                        Keycode::Escape => {
+                                            status = "普通模式".to_string();
+                                        }
+                                        Keycode::H => {
+                                            if editor_cursor > 0 {
+                                                editor_cursor = editor_text[..editor_cursor]
+                                                    .char_indices()
+                                                    .last()
+                                                    .map(|(i, _)| i)
+                                                    .unwrap_or(0);
+                                            }
+                                        }
+                                        Keycode::L => {
+                                            if editor_cursor < editor_text.len() {
+                                                if let Some(ch) = editor_text[editor_cursor..].chars().next() {
+                                                    editor_cursor += ch.len_utf8();
+                                                }
+                                            }
+                                        }
+                                        Keycode::J => {
+                                            let (line, col) = cursor_line_col(&editor_text, editor_cursor);
+                                            let total_lines = editor_text.split('\n').count();
+                                            if line + 1 < total_lines {
+                                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line + 1, col);
+                                            }
+                                        }
+                                        Keycode::K => {
+                                            let (line, col) = cursor_line_col(&editor_text, editor_cursor);
+                                            if line > 0 {
+                                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line - 1, col);
+                                            }
+                                        }
+                                        Keycode::I => {
+                                            if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) {
+                                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                                set_cursor_from_line_col(&editor_text, &mut editor_cursor, line, 0);
+                                            }
+                                            vim_mode = VimMode::Insert;
+                                            suppress_text_input = true;
+                                            status = "编辑模式".to_string();
+                                        }
+                                        Keycode::A => {
+                                            if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) {
+                                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                                let end = line_end_byte(&editor_text, line);
+                                                editor_cursor = end;
+                                            } else if editor_cursor < editor_text.len() {
+                                                if let Some(ch) = editor_text[editor_cursor..].chars().next() {
+                                                    editor_cursor += ch.len_utf8();
+                                                }
+                                            }
+                                            vim_mode = VimMode::Insert;
+                                            suppress_text_input = true;
+                                            status = "编辑模式".to_string();
+                                        }
+                                        Keycode::O => {
+                                            if keymod.intersects(Mod::LSHIFTMOD | Mod::RSHIFTMOD) {
+                                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                                let start = line_start_byte(&editor_text, line);
+                                                editor_text.insert(start, '\n');
+                                                editor_cursor = start;
+                                            } else {
+                                                let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                                let end = line_end_byte(&editor_text, line);
+                                                editor_text.insert(end, '\n');
+                                                editor_cursor = end + 1;
+                                            }
+                                            dirty = true;
+                                            vim_mode = VimMode::Insert;
+                                            suppress_text_input = true;
+                                            status = "编辑模式".to_string();
+                                        }
+                                        Keycode::X => {
+                                            if editor_cursor < editor_text.len() {
+                                                editor_text.remove(editor_cursor);
+                                                dirty = true;
+                                            }
+                                        }
+                                        Keycode::Num0 => {
+                                            let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                            set_cursor_from_line_col(&editor_text, &mut editor_cursor, line, 0);
+                                        }
+                                        Keycode::Dollar => {
+                                            let (line, _) = cursor_line_col(&editor_text, editor_cursor);
+                                            let end = line_end_byte(&editor_text, line);
+                                            editor_cursor = end;
+                                        }
+                                        Keycode::Semicolon | Keycode::Colon => {
+                                            vim_mode = VimMode::Command;
+                                            command_buffer.clear();
+                                            status = "命令模式".to_string();
+                                        }
+                                        Keycode::Plus | Keycode::Equals => {
+                                            speed = (speed + 1).min(10);
+                                            status = format!("速度 {}", speed);
+                                        }
+                                        Keycode::Minus => {
+                                            speed = speed.saturating_sub(1).max(1);
+                                            status = format!("速度 {}", speed);
+                                        }
+                                        Keycode::Return => {
+                                            let (line, col) = cursor_line_col(&editor_text, editor_cursor);
+                                            set_cursor_from_line_col(&editor_text, &mut editor_cursor, line + 1, col);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            },
                         }
                     }
                 }
@@ -410,11 +633,19 @@ ten: EQU 10
         // 左侧标题行
         canvas.set_draw_color(Color::RGB(0, 0, 110));
         canvas.fill_rect(Rect::new(0, 0, left_w, title_h))?;
-        draw_text(&mut canvas, &texture_creator, &font, "LMC(扩展版) 模拟器", 10, 6, Color::RGB(255, 255, 0))?;
+        draw_text(
+            &mut canvas,
+            &texture_creator,
+            &font,
+            &format!("LMC(扩展版) 模拟器 - {}模式", vim_mode.name()),
+            10,
+            6,
+            Color::RGB(255, 255, 0),
+        )?;
 
         // 左侧快捷键行
         canvas.fill_rect(Rect::new(0, title_h as i32, left_w, shortcut_h))?;
-        let shortcut_text = "F5运行/暂停 | F6单步 | F7复位 | F8导出 | F9断点 | Ctrl+O打开 | Ctrl+S保存";
+        let shortcut_text = "Vim: hjkl移动 i插入 a追加 o/O新行 x删除 :命令 | :q退出 | F5运行 F6单步 F7复位 F8导出 F9断点";
         draw_text(&mut canvas, &texture_creator, &font, shortcut_text, 10, title_h as i32 + 6, Color::RGB(255, 255, 0))?;
 
         // 编辑器背景
@@ -518,12 +749,10 @@ ten: EQU 10
             my += line_h;
         }
 
+        // 底部状态行：只负责提示 / 输入，运行状态栏已移到编辑器右下角
         canvas.set_draw_color(Color::RGB(0, 0, 110));
         canvas.fill_rect(status_rect)?;
-        let run_state = if running { "运行" } else if cpu.halted { "停机" } else { "暂停" };
         let io = cpu.io_log.last().map(|s| s.as_str()).unwrap_or("");
-        let status_text = format!("{} | 速度 {} (+/-) | {} | {}", run_state, speed, status, io);
-        draw_text(&mut canvas, &texture_creator, &font, &status_text, 8, status_rect.y() + 4, Color::RGB(255, 255, 0))?;
         if input_mode != InputMode::None {
             let prompt = match input_mode {
                 InputMode::Open => "打开文件路径: ",
@@ -531,8 +760,68 @@ ten: EQU 10
                 InputMode::Export => "导出机器码路径: ",
                 InputMode::None => "",
             };
-            draw_text(&mut canvas, &texture_creator, &font, &format!("{}{}_", prompt, input_buffer), 8, status_rect.y() + 4, Color::RGB(255, 255, 255))?;
+            draw_text(
+                &mut canvas,
+                &texture_creator,
+                &font,
+                &format!("{}{}_", prompt, input_buffer),
+                8,
+                status_rect.y() + 4,
+                Color::RGB(255, 255, 255),
+            )?;
+        } else if vim_mode == VimMode::Command {
+            draw_text(
+                &mut canvas,
+                &texture_creator,
+                &font,
+                &format!(":{}_", command_buffer),
+                8,
+                status_rect.y() + 4,
+                Color::RGB(255, 255, 255),
+            )?;
+        } else {
+            let hint = if io.is_empty() {
+                status.clone()
+            } else {
+                format!("{} | {}", status, io)
+            };
+            draw_text(
+                &mut canvas,
+                &texture_creator,
+                &font,
+                &hint,
+                8,
+                status_rect.y() + 4,
+                Color::RGB(255, 255, 0),
+            )?;
         }
+
+        // 运行状态栏：绘制在编辑器区域的右下角，避免和命令模式输入互相覆盖
+        let run_state = if running {
+            "运行"
+        } else if cpu.halted {
+            "停机"
+        } else {
+            "暂停"
+        };
+        let run_text = format!("{}模式 | {} | 速度 {}", vim_mode.name(), run_state, speed);
+        let (rtw, rth) = font.size_of(&run_text)?;
+        let margin = 6;
+        let rx = (editor_rect.x() + editor_rect.width() as i32 - rtw as i32 - margin)
+            .max(editor_rect.x() + 4);
+        let ry = (editor_rect.y() + editor_rect.height() as i32 - rth as i32 - margin + 2)
+            .max(editor_rect.y());
+        canvas.set_draw_color(Color::RGB(0, 0, 80));
+        canvas.fill_rect(Rect::new(rx - 4, ry - 2, rtw + 8, rth + 4))?;
+        draw_text(
+            &mut canvas,
+            &texture_creator,
+            &font,
+            &run_text,
+            rx,
+            ry,
+            Color::RGB(255, 255, 0),
+        )?;
 
         canvas.present();
         std::thread::sleep(Duration::from_millis(16));
