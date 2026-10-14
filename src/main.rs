@@ -99,17 +99,27 @@ ten: EQU 10
         let (win_w, win_h) = canvas.output_size()?;
         let line_h = font.height() + 4;
 
-        let top_h: u32 = 34;
-        let bottom_h: u32 = 30;
-        let main_h = win_h.saturating_sub(top_h).saturating_sub(bottom_h);
-        let left_w = win_w * 3 / 5;
-        let editor_rect = Rect::new(0, top_h as i32, left_w, main_h);
+        // 左侧面板布局：标题行、快捷键行、代码编辑区、状态行
+        let left_w = win_w / 2;
+        let title_h: u32 = line_h as u32;
+        let shortcut_h: u32 = line_h as u32;
+        let status_h: u32 = line_h as u32;
+        let editor_y = title_h + shortcut_h;
+        let editor_h = win_h.saturating_sub(title_h + shortcut_h + status_h);
+        let editor_rect = Rect::new(0, editor_y as i32, left_w, editor_h);
+        let status_rect = Rect::new(0, (win_h - status_h) as i32, left_w, status_h);
+
+        // 右侧面板布局：寄存器区、内存区
         let right_x = left_w as i32;
         let right_w = win_w - left_w;
         let reg_h: u32 = 140;
-        let reg_rect = Rect::new(right_x, top_h as i32, right_w, reg_h);
-        let mem_rect = Rect::new(right_x, top_h as i32 + reg_h as i32, right_w, main_h.saturating_sub(reg_h));
-        let status_rect = Rect::new(0, (win_h - bottom_h) as i32, win_w, bottom_h);
+        let reg_rect = Rect::new(right_x, 0, right_w, reg_h);
+        let mem_rect = Rect::new(
+            right_x,
+            reg_h as i32 + line_h as i32,
+            right_w,
+            win_h.saturating_sub(reg_h + line_h as u32),
+        );
 
         let now = Instant::now();
         let dt = now.duration_since(last_tick).as_secs_f64();
@@ -351,7 +361,8 @@ ten: EQU 10
                         } else if y < 0 {
                             editor_scroll = editor_scroll.saturating_add(1);
                         }
-                    } else if mouse_y >= mem_rect.y()
+                    } else if mouse_x >= right_x
+                        && mouse_y >= mem_rect.y()
                         && mouse_y < mem_rect.y() + mem_rect.height() as i32
                     {
                         if y > 0 {
@@ -387,15 +398,23 @@ ten: EQU 10
         canvas.set_draw_color(Color::RGB(0, 0, 170));
         canvas.clear();
 
+        // 左侧标题行
         canvas.set_draw_color(Color::RGB(0, 0, 110));
-        canvas.fill_rect(Rect::new(0, 0, win_w, top_h))?;
-        draw_text(&mut canvas, &texture_creator, &font, "LMC 模拟器 - SDL2 自绘 UI - Turbo C 风格", 10, 6, Color::RGB(255, 255, 0))?;
+        canvas.fill_rect(Rect::new(0, 0, left_w, title_h))?;
+        draw_text(&mut canvas, &texture_creator, &font, "LMC(扩展版) 模拟器", 10, 6, Color::RGB(255, 255, 0))?;
 
+        // 左侧快捷键行
+        canvas.fill_rect(Rect::new(0, title_h as i32, left_w, shortcut_h))?;
+        let shortcut_text = "F5运行/暂停 | F6单步 | F7复位 | F8导出 | F9断点 | Ctrl+O打开 | Ctrl+S保存";
+        draw_text(&mut canvas, &texture_creator, &font, shortcut_text, 10, title_h as i32 + 6, Color::RGB(255, 255, 0))?;
+
+        // 编辑器背景
         canvas.set_draw_color(Color::RGB(0, 0, 140));
         canvas.fill_rect(editor_rect)?;
         canvas.set_draw_color(Color::RGB(0, 0, 110));
         canvas.fill_rect(Rect::new(editor_rect.x(), editor_rect.y(), 60, editor_rect.height()))?;
 
+        // 右侧面板
         canvas.set_draw_color(Color::RGB(0, 0, 150));
         canvas.fill_rect(reg_rect)?;
         canvas.fill_rect(mem_rect)?;
@@ -477,10 +496,7 @@ ten: EQU 10
         canvas.fill_rect(status_rect)?;
         let run_state = if running { "运行" } else if cpu.halted { "停机" } else { "暂停" };
         let io = cpu.io_log.last().map(|s| s.as_str()).unwrap_or("");
-        let status_text = format!(
-            "{} | 速度 {} (+/-) | {} | F5运行/暂停 F6单步 F7复位 F8导出 F9断点 Ctrl+O打开 Ctrl+S保存 | {}",
-            run_state, speed, status, io
-        );
+        let status_text = format!("{} | 速度 {} (+/-) | {} | {}", run_state, speed, status, io);
         draw_text(&mut canvas, &texture_creator, &font, &status_text, 8, status_rect.y() + 4, Color::RGB(255, 255, 0))?;
         if input_mode != InputMode::None {
             let prompt = match input_mode {
