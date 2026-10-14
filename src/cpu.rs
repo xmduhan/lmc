@@ -6,6 +6,12 @@ pub struct Cpu {
     pub mem: Vec<u16>,
     pub pc: u16,
     pub acc: u16,
+    pub ax: u16,
+    pub bx: u16,
+    pub cx: u16,
+    pub dx: u16,
+    pub sp: u16,
+    pub fp: u16,
     pub z: bool,
     pub n: bool,
     pub halted: bool,
@@ -16,13 +22,16 @@ pub struct Cpu {
 
 impl Cpu {
     pub fn new() -> Self {
-        let mut mem = vec![0u16; MEM_SIZE];
-        mem[0] = 4999;
-        mem[1] = 4999;
         Cpu {
-            mem,
+            mem: vec![0u16; MEM_SIZE],
             pc: 0,
             acc: 0,
+            ax: 0,
+            bx: 0,
+            cx: 0,
+            dx: 0,
+            sp: 4999,
+            fp: 4999,
             z: false,
             n: false,
             halted: false,
@@ -34,10 +43,14 @@ impl Cpu {
 
     pub fn reset(&mut self) {
         self.mem = vec![0u16; MEM_SIZE];
-        self.mem[0] = 4999;
-        self.mem[1] = 4999;
         self.pc = 0;
         self.acc = 0;
+        self.ax = 0;
+        self.bx = 0;
+        self.cx = 0;
+        self.dx = 0;
+        self.sp = 4999;
+        self.fp = 4999;
         self.z = false;
         self.n = false;
         self.halted = false;
@@ -45,10 +58,6 @@ impl Cpu {
         self.io_log.clear();
         self.input_queue.clear();
     }
-
-    pub fn sp(&self) -> u16 { self.mem[0] }
-    fn set_sp(&mut self, v: u16) { self.mem[0] = v; }
-    pub fn fp(&self) -> u16 { self.mem[1] }
 
     fn set_flags_from_acc(&mut self) {
         self.z = self.acc == 0;
@@ -118,19 +127,19 @@ impl Cpu {
             (0, 0x001) => self.halted = true,
             (0, 0x002) => {}
             (0, 0x005) => {
-                let sp = self.sp() as usize;
+                let sp = self.sp as usize;
                 if sp < MEM_SIZE { self.mem[sp] = self.acc; }
-                self.set_sp(self.sp().wrapping_sub(1));
+                self.sp = self.sp.wrapping_sub(1);
             }
             (0, 0x006) => {
-                self.set_sp(self.sp().wrapping_add(1));
-                let sp = self.sp() as usize;
+                self.sp = self.sp.wrapping_add(1);
+                let sp = self.sp as usize;
                 if sp < MEM_SIZE { self.acc = self.mem[sp]; }
                 self.set_flags_from_acc();
             }
             (0, 0x007) => {
-                self.set_sp(self.sp().wrapping_add(1));
-                let sp = self.sp() as usize;
+                self.sp = self.sp.wrapping_add(1);
+                let sp = self.sp as usize;
                 if sp < MEM_SIZE { self.pc = self.mem[sp]; }
             }
             (1, 0x001) => {
@@ -180,9 +189,9 @@ impl Cpu {
             (1, 0x00A) => { if self.z { self.pc = operands[0]; } }
             (1, 0x00B) => { if self.n { self.pc = operands[0]; } }
             (1, 0x011) => {
-                let sp = self.sp() as usize;
+                let sp = self.sp as usize;
                 if sp < MEM_SIZE { self.mem[sp] = self.pc; }
-                self.set_sp(self.sp().wrapping_sub(1));
+                self.sp = self.sp.wrapping_sub(1);
                 self.pc = operands[0];
             }
             (1, 0x012) => {

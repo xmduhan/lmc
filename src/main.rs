@@ -882,18 +882,24 @@ fn main() -> Result<(), String> {
             Color::RGB(0, 255, 255),
         )?;
         let data_y = title_y + line_h;
-        let col_w = reg_rect.width() as i32 / 2;
-        let left_regs = [
+        let col_w = reg_rect.width() as i32 / 3;
+        let col1 = [
             format!("PC    = 0x{:04X} ({})", cpu.pc, cpu.pc),
             format!("ACC   = 0x{:04X} ({})", cpu.acc, cpu.acc as i16),
+            format!("SP    = 0x{:04X} ({})", cpu.sp, cpu.sp),
+            format!("FP    = 0x{:04X} ({})", cpu.fp, cpu.fp),
+        ];
+        let col2 = [
+            format!("AX    = 0x{:04X} ({})", cpu.ax, cpu.ax as i16),
+            format!("BX    = 0x{:04X} ({})", cpu.bx, cpu.bx as i16),
+            format!("CX    = 0x{:04X} ({})", cpu.cx, cpu.cx as i16),
+            format!("DX    = 0x{:04X} ({})", cpu.dx, cpu.dx as i16),
+        ];
+        let col3 = [
             format!("Z     = {}", cpu.z),
             format!("N     = {}", cpu.n),
-        ];
-        let right_regs = [
-            format!("HALT  = {}", cpu.halted),
             format!("CYCLE = {}", cpu.cycles),
-            format!("SP    = 0x{:04X} ({})", cpu.sp(), cpu.sp()),
-            format!("FP    = 0x{:04X} ({})", cpu.fp(), cpu.fp()),
+            format!("HALT  = {}", cpu.halted),
         ];
         for i in 0..4 {
             let y = data_y + (i as i32) * line_h;
@@ -901,7 +907,7 @@ fn main() -> Result<(), String> {
                 &mut canvas,
                 &texture_creator,
                 &font,
-                &left_regs[i],
+                &col1[i],
                 reg_rect.x() + 8,
                 y,
                 Color::RGB(255, 255, 0),
@@ -910,8 +916,17 @@ fn main() -> Result<(), String> {
                 &mut canvas,
                 &texture_creator,
                 &font,
-                &right_regs[i],
+                &col2[i],
                 reg_rect.x() + col_w,
+                y,
+                Color::RGB(255, 255, 0),
+            )?;
+            draw_text(
+                &mut canvas,
+                &texture_creator,
+                &font,
+                &col3[i],
+                reg_rect.x() + 2 * col_w,
                 y,
                 Color::RGB(255, 255, 0),
             )?;
