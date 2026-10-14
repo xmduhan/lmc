@@ -47,3 +47,33 @@ fn call_ret_uses_stack() {
     cpu.step();
     assert_eq!(cpu.pc, 102);
 }
+
+#[test]
+fn add_immediate_instruction() {
+    let mut cpu = Cpu::new();
+    cpu.pc = 100;
+    cpu.mem[100] = 0x1021; // ADD imm
+    cpu.mem[101] = 5;
+    cpu.acc = 10;
+    cpu.step();
+    assert_eq!(cpu.acc, 15);
+}
+
+#[test]
+fn cmp_immediate_instruction() {
+    let mut cpu = Cpu::new();
+    cpu.pc = 100;
+    cpu.mem[100] = 0x2006; // CMP [a] imm
+    cpu.mem[101] = 200; // addr a
+    cpu.mem[102] = 42; // imm
+    cpu.mem[200] = 42;
+    cpu.step();
+    assert!(cpu.z);
+    assert!(!cpu.n);
+
+    cpu.mem[200] = 41;
+    cpu.pc = 100;
+    cpu.step();
+    assert!(!cpu.z);
+    assert!(cpu.n);
+}

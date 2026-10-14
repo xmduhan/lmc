@@ -1,6 +1,6 @@
 # 小人计算机扩展指令集架构规范
 
-**版本 1.1**
+**版本 1.2**
 
 ---
 
@@ -121,40 +121,46 @@ pc += 1 + n
 | 0x0006 | POP | SP = SP + 1; ACC = mem[SP] | Z, N |
 | 0x0007 | RET | 弹出返回地址到 PC | — |
 
-### 5.2 1xxx 档：1 操作数指令（14 条）
+### 5.2 1xxx 档：1 操作数指令（19 条）
 
 | 机器码 | 助记符 | 含义 | 影响标志 |
 |--------|--------|------|----------|
-| 0x1001 [addr] | LDA addr | ACC = mem[addr] | Z, N |
-| 0x1002 [addr] | STA addr | mem[addr] = ACC | — |
-| 0x1003 [imm] | LDI imm | ACC = imm | Z, N |
-| 0x1004 [addr] | ADD addr | ACC = ACC + mem[addr] | Z, N |
-| 0x1005 [addr] | SUB addr | ACC = ACC - mem[addr] | Z, N |
-| 0x1006 [addr] | AND addr | ACC = ACC & mem[addr] | Z, N |
-| 0x1007 [addr] | OR addr | ACC = ACC \| mem[addr] | Z, N |
-| 0x1008 [addr] | XOR addr | ACC = ACC ^ mem[addr] | Z, N |
+| 0x1001 [addr] | LD [addr] | ACC = mem[addr] | Z, N |
+| 0x1002 [addr] | ST [addr] | mem[addr] = ACC | — |
+| 0x1003 [imm] | LD imm | ACC = imm | Z, N |
+| 0x1004 [addr] | ADD [addr] | ACC = ACC + mem[addr] | Z, N |
+| 0x1005 [addr] | SUB [addr] | ACC = ACC - mem[addr] | Z, N |
+| 0x1006 [addr] | AND [addr] | ACC = ACC & mem[addr] | Z, N |
+| 0x1007 [addr] | OR [addr] | ACC = ACC \| mem[addr] | Z, N |
+| 0x1008 [addr] | XOR [addr] | ACC = ACC ^ mem[addr] | Z, N |
 | 0x1009 [addr] | BRA addr | PC = addr | — |
 | 0x100A [addr] | BRZ addr | if Z: PC = addr | — |
 | 0x100B [addr] | BLT addr | if N: PC = addr | — |
 | 0x1011 [addr] | CALL addr | 压返回地址，PC = addr | — |
 | 0x1012 [addr] | IN addr | ACC = 从端口 addr 读 | Z, N |
 | 0x1013 [addr] | OUT addr | 把 ACC 写到端口 addr | — |
+| 0x1021 [imm] | ADD imm | ACC = ACC + imm | Z, N |
+| 0x1022 [imm] | SUB imm | ACC = ACC - imm | Z, N |
+| 0x1023 [imm] | AND imm | ACC = ACC & imm | Z, N |
+| 0x1024 [imm] | OR imm | ACC = ACC \| imm | Z, N |
+| 0x1025 [imm] | XOR imm | ACC = ACC ^ imm | Z, N |
 
-### 5.3 2xxx 档：2 操作数指令（2 条）
+### 5.3 2xxx 档：2 操作数指令（3 条）
 
 | 机器码 | 助记符 | 含义 | 影响标志 |
 |--------|--------|------|----------|
-| 0x2004 [a][b] | CMP a, b | 比较 mem[a] 和 mem[b]，设置 Z/N | Z, N |
+| 0x2004 [a][b] | CMP [a] [b] | 比较 mem[a] 和 mem[b]，设置 Z/N | Z, N |
 | 0x2005 [port][imm] | OUTI port, imm | 把立即数 imm 写到端口 port | — |
+| 0x2006 [a][imm] | CMP [a] imm | 比较 mem[a] 和立即数 imm，设置 Z/N | Z, N |
 
 ### 5.4 指令统计
 
 | 档位 | 条数 |
 |------|------|
 | 0xxx | 5 |
-| 1xxx | 14 |
-| 2xxx | 2 |
-| **合计** | **21** |
+| 1xxx | 19 |
+| 2xxx | 3 |
+| **合计** | **27** |
 
 ---
 
@@ -162,10 +168,11 @@ pc += 1 + n
 
 | 指令 | Z 标志 | N 标志 |
 |------|--------|--------|
-| LDA / LDI / POP / IN | ACC == 0 | ACC < 0 |
-| ADD / SUB / AND / OR / XOR | 结果 == 0 | 结果 < 0 |
-| CMP a, b | mem[a] == mem[b] | mem[a] < mem[b] |
-| STA / PUSH / 分支 / CALL / RET / OUT / OUTI / NOP / HLT | 不变 | 不变 |
+| LD / POP / IN | ACC == 0 | ACC < 0 |
+| ADD / SUB / AND / OR / XOR (内存或立即数) | 结果 == 0 | 结果 < 0 |
+| CMP [a] [b] | mem[a] == mem[b] | mem[a] < mem[b] |
+| CMP [a] imm | mem[a] == imm | mem[a] < imm |
+| ST / PUSH / 分支 / CALL / RET / OUT / OUTI / NOP / HLT | 不变 | 不变 |
 
 ---
 
@@ -299,7 +306,7 @@ def write_port(addr, value):
   HLT  NOP  PUSH  POP  RET
 
 1xxx 档：
-  LDA  STA  LDI  ADD  SUB  AND  OR  XOR
+  LD   ST   ADD  SUB  AND  OR  XOR
   BRA  BRZ  BLT  CALL
   IN   OUT
 
@@ -307,18 +314,29 @@ def write_port(addr, value):
   CMP  OUTI
 ```
 
+### 语法规则
+
+- `LD [addr]`：从内存加载
+- `LD imm`：加载立即数
+- `ST [addr]`：存储到内存（必须用 `[]`）
+- `ADD [addr]` / `ADD imm`：加法（其他算术同理）
+- `CMP [a] [b]`：比较两个内存值
+- `CMP [a] imm`：比较内存值与立即数
+
 ### 条件分支的等价写法
 
 只有 `BRZ` 和 `BLT` 两条条件分支，其余条件用组合实现：
 
 | 条件 | 实现 |
 |------|------|
-| `if a == b` | `CMP a, b` + `BRZ L` |
-| `if a != b` | `CMP a, b` + `BRZ skip` + `BRA L` + `skip:` |
-| `if a < b` | `CMP a, b` + `BLT L` |
-| `if a >= b` | `CMP a, b` + `BLT skip` + `BRA L` + `skip:` |
-| `if a <= b` | `CMP a, b` + `BLT L` + `BRZ L` |
-| `if a > b` | `CMP a, b` + `BLT skip` + `BRZ skip` + `BRA L` + `skip:` |
+| `if a == b` | `CMP [a] [b]` + `BRZ L` |
+| `if a != b` | `CMP [a] [b]` + `BRZ skip` + `BRA L` + `skip:` |
+| `if a < b` | `CMP [a] [b]` + `BLT L` |
+| `if a >= b` | `CMP [a] [b]` + `BLT skip` + `BRA L` + `skip:` |
+| `if a <= b` | `CMP [a] [b]` + `BLT L` + `BRZ L` |
+| `if a > b` | `CMP [a] [b]` + `BLT skip` + `BRZ skip` + `BRA L` + `skip:` |
+| `if a < imm` | `CMP [a] imm` + `BLT L` |
+| `if a == imm` | `CMP [a] imm` + `BRZ L` |
 
 ---
 
@@ -327,7 +345,7 @@ def write_port(addr, value):
 ### 10.1 输出数字 42
 
 ```
-LDI 42
+LD 42
 OUT 60000
 ```
 
@@ -341,9 +359,9 @@ OUTI 60000, 42
 
 ```
 IN 60000        ; ACC = 键盘输入
-STA tmp         ; 保存到临时变量
-LDI 1           ; ACC = 1
-ADD tmp         ; ACC = 1 + 输入
+ST [tmp]        ; 保存到临时变量
+LD 1            ; ACC = 1
+ADD [tmp]       ; ACC = 1 + 输入
 OUT 60000       ; 输出结果
 ```
 
@@ -368,25 +386,25 @@ for (i = 1; i <= 10; i = i + 1) {
 编译为 LMC 汇编：
 
 ```
-        LDI 0
-        STA sum         ; sum = 0
-        LDI 1
-        STA i           ; i = 1
+        LD 0
+        ST [sum]        ; sum = 0
+        LD 1
+        ST [i]          ; i = 1
 
 loop:
-        LDA i
-        SUB ten         ; ten 里存常量 10
+        LD [i]
+        SUB [ten]       ; ten 里存常量 10
         BGE end         ; if i >= 10 跳出
-        LDA sum
-        ADD i
-        STA sum         ; sum += i
-        LDA i
-        ADD one
-        STA i           ; i += 1
+        LD [sum]
+        ADD [i]
+        ST [sum]        ; sum += i
+        LD [i]
+        ADD [one]
+        ST [i]          ; i += 1
         BRA loop
 
 end:
-        LDA sum
+        LD [sum]
         OUT 60000
         HLT
 
@@ -412,9 +430,9 @@ int main() {
 
 ```
 ; main
-        LDI 3
+        LD 3
         PUSH            ; 参数 x
-        LDI 4
+        LD 4
         PUSH            ; 参数 y
         CALL add
         POP             ; 清理参数 y
@@ -425,9 +443,9 @@ int main() {
 ; add
 add:
         POP             ; 弹出 y
-        STA tmp         ; 存入编译器临时变量
+        ST [tmp]        ; 存入编译器临时变量
         POP             ; 弹出 x
-        ADD tmp         ; ACC = x + y
+        ADD [tmp]       ; ACC = x + y
         RET
 ```
 
@@ -451,6 +469,9 @@ add:
 | 栈指针 / 帧指针 | SP / FP 硬件寄存器 | 从内存模拟改为真寄存器，语义不变 |
 | I/O | 内存映射 + IN / OUT / OUTI | 端口数量无限，贴近真实 CPU |
 | 端口立即数 | OUTI port, imm | 直接写常量到端口，省一条指令 |
+| 助记符合并 | LD/ST 统一 | 简化书写，按 [] 区分立即数与内存 |
+| 算术立即数 | ADD/SUB/AND/OR/XOR 支持立即数 | 减少 LD+ST 临时变量，指令数 21→27 |
+| CMP 立即数 | CMP [a] imm | 比较内存与常量更方便 |
 
 ---
 

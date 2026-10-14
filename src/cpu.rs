@@ -185,6 +185,31 @@ impl Cpu {
                 self.acc ^= v;
                 self.set_flags_from_acc();
             }
+            (1, 0x021) => {
+                let v = operands[0];
+                self.acc = self.acc.wrapping_add(v);
+                self.set_flags_from_acc();
+            }
+            (1, 0x022) => {
+                let v = operands[0];
+                self.acc = self.acc.wrapping_sub(v);
+                self.set_flags_from_acc();
+            }
+            (1, 0x023) => {
+                let v = operands[0];
+                self.acc &= v;
+                self.set_flags_from_acc();
+            }
+            (1, 0x024) => {
+                let v = operands[0];
+                self.acc |= v;
+                self.set_flags_from_acc();
+            }
+            (1, 0x025) => {
+                let v = operands[0];
+                self.acc ^= v;
+                self.set_flags_from_acc();
+            }
             (1, 0x009) => self.pc = operands[0],
             (1, 0x00A) => { if self.z { self.pc = operands[0]; } }
             (1, 0x00B) => { if self.n { self.pc = operands[0]; } }
@@ -211,6 +236,13 @@ impl Cpu {
             }
             (2, 0x005) => {
                 self.write_port(operands[0], operands[1]);
+            }
+            (2, 0x006) => {
+                let a = operands[0] as usize;
+                let va = if a < MEM_SIZE { self.mem[a] } else { 0 };
+                let vb = operands[1];
+                self.z = va == vb;
+                self.n = (va as i16) < (vb as i16);
             }
             _ => {
                 self.halted = true;
