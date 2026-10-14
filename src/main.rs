@@ -18,6 +18,9 @@ use cpu::Cpu;
 use editor::{cursor_line_col, line_end_byte, set_cursor_from_line_col};
 use ui::{draw_text, find_font};
 
+/// 界面渲染字号。
+const FONT_SIZE: u16 = 18;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InputMode {
     None,
@@ -31,8 +34,10 @@ fn main() -> Result<(), String> {
     let video = sdl_context.video()?;
     let ttf_context = sdl2::ttf::init().map_err(|e| e.to_string())?;
     let font_path = find_font().ok_or_else(|| "找不到等宽字体".to_string())?;
-    let mut font = ttf_context.load_font(font_path, 18)?;
+
+    let mut font = ttf_context.load_font(&font_path, FONT_SIZE)?;
     font.set_style(sdl2::ttf::FontStyle::NORMAL);
+    let char_w = font.size_of("M").map(|(w, _)| w).unwrap_or(8) as i32;
 
     let window = video
         .window("LMC 模拟器 - Turbo C 风格", 1920, 1080)
@@ -93,7 +98,6 @@ ten: EQU 10
     'outer: loop {
         let (win_w, win_h) = canvas.output_size()?;
         let line_h = font.height() + 4;
-        let char_w = font.size_of("M").map(|(w, _)| w).unwrap_or(8) as i32;
 
         let top_h: u32 = 34;
         let bottom_h: u32 = 30;
@@ -102,8 +106,9 @@ ten: EQU 10
         let editor_rect = Rect::new(0, top_h as i32, left_w, main_h);
         let right_x = left_w as i32;
         let right_w = win_w - left_w;
-        let reg_rect = Rect::new(right_x, top_h as i32, right_w, 230);
-        let mem_rect = Rect::new(right_x, top_h as i32 + 230, right_w, main_h.saturating_sub(230));
+        let reg_h: u32 = 140;
+        let reg_rect = Rect::new(right_x, top_h as i32, right_w, reg_h);
+        let mem_rect = Rect::new(right_x, top_h as i32 + reg_h as i32, right_w, main_h.saturating_sub(reg_h));
         let status_rect = Rect::new(0, (win_h - bottom_h) as i32, win_w, bottom_h);
 
         let now = Instant::now();
@@ -431,22 +436,26 @@ ten: EQU 10
             }
         }
 
-        let mut ry = reg_rect.y() + 8;
-        draw_text(&mut canvas, &texture_creator, &font, "寄存器", reg_rect.x() + 8, ry, Color::RGB(0, 255, 255))?;
-        ry += line_h;
-        let regs = [
+        let title_y = reg_rect.y() + 6;
+        draw_text(&mut canvas, &texture_creator, &font, "寄存器", reg_rect.x() + 8, title_y, Color::RGB(0, 255, 255))?;
+        let data_y = title_y + line_h;
+        let col_w = reg_rect.width() as i32 / 2;
+        let left_regs = [
             format!("PC    = 0x{:04X} ({})", cpu.pc, cpu.pc),
             format!("ACC   = 0x{:04X} ({})", cpu.acc, cpu.acc as i16),
             format!("Z     = {}", cpu.z),
             format!("N     = {}", cpu.n),
+        ];
+        let right_regs = [
             format!("HALT  = {}", cpu.halted),
             format!("CYCLE = {}", cpu.cycles),
             format!("SP    = 0x{:04X} ({})", cpu.sp(), cpu.sp()),
             format!("FP    = 0x{:04X} ({})", cpu.fp(), cpu.fp()),
         ];
-        for reg in &regs {
-            draw_text(&mut canvas, &texture_creator, &font, reg, reg_rect.x() + 8, ry, Color::RGB(255, 255, 0))?;
-            ry += line_h;
+        for i in 0..4 {
+            let y = data_y + (i as i32) * line_h;
+            draw_text(&mut canvas, &texture_creator, &font, &left_regs[i], reg_rect.x() + 8, y, Color::RGB(255, 255, 0))?;
+            draw_text(&mut canvas, &texture_creator, &font, &right_regs[i], reg_rect.x() + col_w, y, Color::RGB(255, 255, 0))?;
         }
 
         draw_text(&mut canvas, &texture_creator, &font, "内存 (十六进制)", mem_rect.x() + 8, mem_rect.y() + 4, Color::RGB(0, 255, 255))?;
