@@ -664,6 +664,12 @@ ten: EQU 10
         if editor_scroll + visible_lines > total_lines {
             editor_scroll = total_lines.saturating_sub(visible_lines);
         }
+        let cursor_line = editor_text[..editor_cursor].chars().filter(|&c| c == '\n').count();
+        if cursor_line < editor_scroll {
+            editor_scroll = cursor_line;
+        } else if cursor_line >= editor_scroll + visible_lines {
+            editor_scroll = cursor_line.saturating_sub(visible_lines - 1);
+        }
         let lines: Vec<&str> = editor_text.split('\n').collect();
         let exec_line = asm.line_map.get(&cpu.pc).copied();
         for i in 0..visible_lines {
