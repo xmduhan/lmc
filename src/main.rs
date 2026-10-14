@@ -357,8 +357,6 @@ ten: EQU 10
                                                 if let Some(path) = &current_file {
                                                     match fs::write(path, &editor_text) {
                                                         Ok(_) => {
-                                                            dirty = false;
-                                                            status = format!("已保存 {}", path);
                                                             break 'outer;
                                                         }
                                                         Err(e) => status = format!("保存失败: {}", e),
@@ -805,7 +803,7 @@ ten: EQU 10
             "暂停"
         };
         let run_text = format!("{}模式 | {} | 速度 {}", vim_mode.name(), run_state, speed);
-        let (rtw, rth) = font.size_of(&run_text)?;
+        let (rtw, rth) = font.size_of(&run_text).map_err(|e| e.to_string())?;
         let margin = 6;
         let rx = (editor_rect.x() + editor_rect.width() as i32 - rtw as i32 - margin)
             .max(editor_rect.x() + 4);
